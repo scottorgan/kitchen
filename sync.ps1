@@ -28,7 +28,7 @@ Else {
 
 # This is where the magic happens!
 Update-Database
-
+Export-CleverStudents
 
 # Clean Up, Clean Up
 $SqlConnection.Close()
