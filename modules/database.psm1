@@ -1,4 +1,12 @@
 ﻿function Update-Database {
+    # Initialize possible variables
+    $basePasswords = $null
+    $basePasswordSymbols = "*", "-", "$", "#"
+    $nameOverrides = Get-NameOverrides
+        
+    # populate array of existing students ids
+    $studentDatabase = Get-StudentArray
+    
     # import students.csv and process CSV related variables
     $csvFile = Import-Csv -path "$HomeDir\import\students.csv"
     $fieldNames = $csvFile[0].psobject.Properties.Name
@@ -10,10 +18,13 @@
     $sqlCommand.CommandText = "begin transaction"
     $sqlCommand.ExecuteNonQuery() | Out-Null
     
-    # Process each CSV line
+    # Process each CSV line  
     ForEach ($line in $csvFile) {
         $lineFields = New-Object Collections.Generic.List[String] # Empty list for each new line
         $updateFields = New-Object Collections.Generic.List[String] # Empty list for each new line
+
+        # Really hackish way of removing the time from a date string... TODO: Work on a less embarrassing way of doing this.
+        $line.DOB = $line.DOB.Substring(0, $line.DOB.Length-9)
 
         ForEach ($fieldName in $fieldNames) {
             if ($line.$fieldName) {
@@ -30,6 +41,23 @@
         $sqlCommand.Parameters.AddWithValue("@dbStatus", 1) | Out-Null # Mark student as active/currently enrolled
         $lineFields.Add("dbStatus")
 
+        # Populate Username & Password fields for new students only
+        if ($studentDatabase -eq $null -or !$studentDatabase.Contains($line.Student_id)) {
+            # If username is not provided by SIS, create one
+            if ([string]::IsNullOrWhiteSpace($line.username)) {
+                $username = Format-Username $line.First_name $line.Last_name
+                $sqlCommand.Parameters.AddWithValue("@username", $username) | Out-Null
+                $lineFields.Add("username")
+            }
+            
+            # If password is not provided by SIS, create one
+            if ([string]::IsNullOrWhiteSpace($line.password)) {
+                $newPassword = New-Password
+                $sqlCommand.Parameters.AddWithValue("@password", $newPassword) | Out-Null
+                $lineFields.Add("password")
+            }
+        }
+        
         # Generate both Field and Value strings for the SQL statement from the current CSV line
         $fields = ($lineFields -join ",")
         $values = $NULL
@@ -130,6 +158,58 @@ function Test-DataTable {
     if ($data.Tables.Rows.'count(*)' -ne 1) {
         Initialize-Database
     }
+}
+
+function Format-Username($first, $last) {
+    $concatenatedName = $first + $last
+    $concatenatedName = $concatenatedName -replace "['.-]",""
+    return $concatenatedName
+}
+
+function Get-NameOverrides {
+    $studentIds = @()
+    if (Test-Path $HomeDir\NameOverrides.csv) {
+        $students = Import-Csv $HomeDir\NameOverrides.csv
+        foreach ($line in $students) {
+            $studentIds += $line.student_id
+        }
+    }
+    return $studentIds
+}
+
+function Get-StudentArray {
+    $studentArray = @()
+    
+    $sqlCommand = $SqlConnection.CreateCommand()
+    $sqlCommand.CommandText = "SELECT * FROM students"
+
+    $adapter = New-Object -TypeName System.Data.SQLite.SQLiteDataAdapter $sqlCommand
+    $data = New-Object System.Data.DataSet
+    $adapter.Fill($data) | Out-Null
+
+    $table = $data.Tables.Rows
+
+    foreach($row in $table) {
+        $studentArray += $row.Student_id
+    }
+
+    $sqlCommand.Dispose()
+
+    return $studentArray
+}
+
+function New-Password{
+    if ($basePasswords -eq $null) {
+        Try {
+            $basePasswords = Get-Content $HomeDir\data\basePasswordList.txt
+        } Catch {
+            Write-Error("Base password list does not exist.")
+        }
+    }
+
+    return $basePasswords[$(Get-Random -Maximum $basePasswords.Length)]+`
+    $(Get-Random -Minimum 10 -Maximum 99) + `
+    $basePasswordSymbols[$(Get-Random -Maximum $basePasswordSymbols.Length)]
 }
 
 Export-ModuleMember -Function Update-Database, Initialize-Database, Test-DataTable

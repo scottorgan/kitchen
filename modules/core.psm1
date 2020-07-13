@@ -8,4 +8,5 @@
     }
     return $hashTable
 }
+
 Export-ModuleMember -Function Get-Settings
