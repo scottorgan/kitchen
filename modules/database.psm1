@@ -26,6 +26,9 @@
         # Really hackish way of removing the time from a date string... TODO: Work on a less embarrassing way of doing this.
         $line.DOB = $line.DOB.Substring(0, $line.DOB.Length-9)
 
+        # Convert Second Year Seniors (Grade: SS) to 12th Grade
+        if ($line.Grade -eq "SS")  {$line.Grade = "12" }
+
         ForEach ($fieldName in $fieldNames) {
             if ($line.$fieldName) {
                 $sqlCommand.Parameters.AddWithValue("@"+$fieldName, $line.$fieldName) | Out-Null
@@ -37,20 +40,27 @@
             }
         }
         
+        # Populate username and email address fields if not provided by the import file
+        if ([string]::IsNullOrWhiteSpace($line.username)) {
+            $username = Format-Username $line.First_name $line.Last_name
+            $sqlCommand.Parameters.AddWithValue("@username", $username) | Out-Null
+            $lineFields.Add("username")
+        }
+        if ([string]::IsNullOrWhiteSpace($line.student_email)) {
+            if (![string]::IsNullOrWhiteSpace($UserSettings.StudentEmailSuffix)) {
+                $emailAddress = $sqlCommand.parameters["@username"].Value + $UserSettings.StudentEmailSuffix
+                $sqlCommand.Parameters.AddWithValue("@student_email", $emailAddress) | Out-Null
+                $lineFields.Add("student_email")
+            }
+        }
+        
         # Populate mandatory database fields not included in CSV
         $sqlCommand.Parameters.AddWithValue("@dbStatus", 1) | Out-Null # Mark student as active/currently enrolled
         $lineFields.Add("dbStatus")
 
         # Populate Username & Password fields for new students only
         if ($studentDatabase -eq $null -or !$studentDatabase.Contains($line.Student_id)) {
-            # If username is not provided by SIS, create one
-            if ([string]::IsNullOrWhiteSpace($line.username)) {
-                $username = Format-Username $line.First_name $line.Last_name
-                $sqlCommand.Parameters.AddWithValue("@username", $username) | Out-Null
-                $lineFields.Add("username")
-            }
-            
-            # If password is not provided by SIS, create one
+            # If password is not provided by import file, create one
             if ([string]::IsNullOrWhiteSpace($line.password)) {
                 $newPassword = New-Password
                 $sqlCommand.Parameters.AddWithValue("@password", $newPassword) | Out-Null
@@ -162,7 +172,7 @@ function Test-DataTable {
 
 function Format-Username($first, $last) {
     $concatenatedName = $first + $last
-    $concatenatedName = $concatenatedName -replace "['.-]",""
+    $concatenatedName = $concatenatedName -replace "[/\s'.-]",""
     return $concatenatedName
 }
 
