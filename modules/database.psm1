@@ -6,6 +6,7 @@
         
     # populate array of existing students ids
     $studentDatabase = Get-StudentArray
+    $studentCsv = @()
     
     # import students.csv and process CSV related variables
     $csvFile = Import-Csv -path "$HomeDir\import\students.csv"
@@ -22,6 +23,7 @@
     ForEach ($line in $csvFile) {
         $lineFields = New-Object Collections.Generic.List[String] # Empty list for each new line
         $updateFields = New-Object Collections.Generic.List[String] # Empty list for each new line
+        $studentCsv = $studentCsv + $line.Student_id.trim()
 
         # Really hackish way of removing the time from a date string... TODO: Work on a less embarrassing way of doing this.
         $line.DOB = $line.DOB.Substring(0, $line.DOB.Length-9)
@@ -31,7 +33,7 @@
 
         ForEach ($fieldName in $fieldNames) {
             if ($line.$fieldName) {
-                $sqlCommand.Parameters.AddWithValue("@"+$fieldName, $line.$fieldName) | Out-Null
+                $sqlCommand.Parameters.AddWithValue("@"+$fieldName, $line.$fieldName.trim()) | Out-Null
                 $lineFields.Add($fieldName)
                 if (!$UserSettings.LockedFields.Contains($line.$fieldName)) { $updateFields.Add($fieldName) }
                 
@@ -57,6 +59,7 @@
         # Populate mandatory database fields not included in CSV
         $sqlCommand.Parameters.AddWithValue("@dbStatus", 1) | Out-Null # Mark student as active/currently enrolled
         $lineFields.Add("dbStatus")
+        $updateFields.Add("dbStatus")
 
         # Populate Username & Password fields for new students only
         if ($studentDatabase -eq $null -or !$studentDatabase.Contains($line.Student_id)) {
@@ -97,6 +100,19 @@
         }
     }
 
+    # Search for and deactivate any dropped students
+    foreach ($studentId in $studentDatabase) {
+        if ($studentCsv -NotContains $studentId.trim()) {
+            Write-Host("Deactivating Student #" + $studentId)
+            $sqlCommand.CommandText = "UPDATE students SET dbStatus=0 WHERE Student_id=" + $studentId + ";"
+            Try {
+                $sqlCommand.ExecuteNonQuery() | Out-Null
+            } Catch {
+                Write-Warning ("Could not deactivate student with ID #" + $studentId)
+            }
+        }
+    }
+        
     # Complete the transaction and clean up
     $sqlCommand.CommandText = "commit transaction"
     $sqlCommand.ExecuteNonQuery() | Out-Null
