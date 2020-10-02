@@ -9,7 +9,9 @@
     $studentCsv = @()
     
     # import students.csv and process CSV related variables
-    $csvFile = Import-Csv -path "$HomeDir\import\students.csv"
+    $csvFile = Import-Csv -path "$HomeDir\data\import\students.csv"
+    #Trim trailing spaces form the Cognos file
+    $csvFile | ForEach-Object {$_.PsObject.Properties | ForEach-Object {$_.Value = $_.Value.Trim()}}
     $fieldNames = $csvFile[0].psobject.Properties.Name
     $percentComplete = 0
     $linePercentage = 100 / $csvFile.Length
@@ -47,12 +49,14 @@
             $username = Format-Username $line.First_name $line.Last_name
             $sqlCommand.Parameters.AddWithValue("@username", $username) | Out-Null
             $lineFields.Add("username")
+            $updateFields.Add("username")
         }
         if ([string]::IsNullOrWhiteSpace($line.student_email)) {
             if (![string]::IsNullOrWhiteSpace($UserSettings.StudentEmailSuffix)) {
                 $emailAddress = $sqlCommand.parameters["@username"].Value + $UserSettings.StudentEmailSuffix
                 $sqlCommand.Parameters.AddWithValue("@student_email", $emailAddress) | Out-Null
                 $lineFields.Add("student_email")
+                $updateFields.Add("student_email")
             }
         }
         
@@ -61,7 +65,7 @@
         $lineFields.Add("dbStatus")
         $updateFields.Add("dbStatus")
 
-        # Populate Username & Password fields for new students only
+        # Populate Password field for new students only
         if ($studentDatabase -eq $null -or !$studentDatabase.Contains($line.Student_id)) {
             # If password is not provided by import file, create one
             if ([string]::IsNullOrWhiteSpace($line.password)) {
@@ -103,12 +107,11 @@
     # Search for and deactivate any dropped students
     foreach ($studentId in $studentDatabase) {
         if ($studentCsv -NotContains $studentId.trim()) {
-            Write-Host("Deactivating Student #" + $studentId)
             $sqlCommand.CommandText = "UPDATE students SET dbStatus=0 WHERE Student_id=" + $studentId + ";"
             Try {
                 $sqlCommand.ExecuteNonQuery() | Out-Null
             } Catch {
-                Write-Warning ("Could not deactivate student with ID #" + $studentId)
+                Write-Warning ("Could not deactivate student with ID #" + $studentId + " in Kitchen Database")
             }
         }
     }
@@ -122,7 +125,7 @@
 
 function Initialize-Database {
     if ((Read-Host "WARN: Database was not found. Create a new one? (Y/N)") -eq "Y") {
-        $SqlConnection.ConnectionString = "Data Source=$HomeDir\data\master.db3"
+        $SqlConnection.ConnectionString = "Data Source=$HomeDir\data\resources\master.db3"
         $SqlConnection.Open()
         $createTableQuery = "CREATE TABLE students (
             School_id TEXT NOT NULL,
@@ -189,13 +192,14 @@ function Test-DataTable {
 function Format-Username($first, $last) {
     $concatenatedName = $first + $last
     $concatenatedName = $concatenatedName -replace "[/\s'.-]",""
+    $concatenatedName = $concatenatedName.SubString(0,[math]::min(20,$concatenatedName.length))
     return $concatenatedName
 }
 
 function Get-NameOverrides {
     $studentIds = @()
     if (Test-Path $HomeDir\NameOverrides.csv) {
-        $students = Import-Csv $HomeDir\NameOverrides.csv
+        $students = Import-Csv $HomeDir\data\NameOverrides.csv
         foreach ($line in $students) {
             $studentIds += $line.student_id
         }
@@ -227,7 +231,7 @@ function Get-StudentArray {
 function New-Password{
     if ($basePasswords -eq $null) {
         Try {
-            $basePasswords = Get-Content $HomeDir\data\basePasswordList.txt
+            $basePasswords = Get-Content $HomeDir\data\resources\basePasswordList.txt
         } Catch {
             Write-Error("Base password list does not exist.")
         }

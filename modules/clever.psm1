@@ -1,4 +1,5 @@
-﻿function Export-CleverStudents {
+﻿function Export-CleverData {
+    if (!(Test-Path -Path "$HomeDir\data\output\Clever")) { New-Item -Path "$HomeDir\data\output" -Name "Clever" -ItemType "directory" | Out-Null }
     $objCsvFile = @()
     
     $sqlCommand = $SqlConnection.CreateCommand()
@@ -36,31 +37,41 @@
         }
     }
 
-    if (Test-Path $HomeDir\Output\Clever\students.csv) {Remove-Item $HomeDir\Output\Clever\students.csv}
-    $objCsvFile | Sort-Object -Property "Student_id" | Export-Csv $HomeDir\Output\Clever\students.csv -NoTypeInformation
+    if (Test-Path $HomeDir\data\output\Clever\students.csv) {Remove-Item $HomeDir\data\output\Clever\students.csv}
+    $objCsvFile | Sort-Object -Property "Student_id" | Export-Csv $HomeDir\data\output\Clever\students.csv -NoTypeInformation
+
+    # Copy other necessary Clever files from import folder
+    Export-OtherFiles
+
+    # Ship it!
+    $credentials = $UserSettings.CleverInfo.Split(",")
+    $argumentList = "/command `"open sftp://" + $credentials[0] + ":" + $credentials[1] + "@" + $UserSettings.CleverUrl + "`" `"synchronize remote -delete -preservetime $HomeDir\data\output\Clever`" `"close`" `"exit`""
+    Start-Process -FilePath "$HomeDir\resources\winscp.com" -ArgumentList $argumentList -Wait
 }
 
-function Export-CleverDownloads {
+function Export-OtherFiles {
+    if (!(Test-Path -Path "$HomeDir\data\output\Clever")) { New-Item -Path "$HomeDir\data\output" -Name "Clever" -ItemType "directory" | Out-Null }
+
     # Enrollments.csv
-    if (Test-Path $HomeDir\import\enrollments.csv) {
-        if (Test-Path $HomeDir\Output\Clever\enrollments.csv) { Remove-Item $HomeDir\Output\Clever\enrollments.csv }
-        Copy-Item $HomeDir\import\enrollments.csv -Destination $HomeDir\Output\Clever
+    if (Test-Path $HomeDir\data\import\enrollments.csv) {
+        if (Test-Path $HomeDir\data\output\Clever\enrollments.csv) { Remove-Item $HomeDir\data\output\Clever\enrollments.csv }
+        Copy-Item $HomeDir\data\import\enrollments.csv -Destination $HomeDir\data\output\Clever
     }
     # Schools.csv
-    if (Test-Path $HomeDir\import\schools.csv) {
-        if (Test-Path $HomeDir\Output\Clever\schools.csv) { Remove-Item $HomeDir\Output\Clever\schools.csv }
-        Copy-Item $HomeDir\import\schools.csv -Destination $HomeDir\Output\Clever
+    if (Test-Path $HomeDir\data\import\schools.csv) {
+        if (Test-Path $HomeDir\data\output\Clever\schools.csv) { Remove-Item $HomeDir\data\output\Clever\schools.csv }
+        Copy-Item $HomeDir\data\import\schools.csv -Destination $HomeDir\data\output\Clever
     }
     # Sections.csv
-    if (Test-Path $HomeDir\import\sections.csv) {
-        if (Test-Path $HomeDir\Output\Clever\sections.csv) { Remove-Item $HomeDir\Output\Clever\sections.csv }
-        Copy-Item $HomeDir\import\sections.csv -Destination $HomeDir\Output\Clever
+    if (Test-Path $HomeDir\data\import\sections.csv) {
+        if (Test-Path $HomeDir\data\output\Clever\sections.csv) { Remove-Item $HomeDir\data\output\Clever\sections.csv }
+        Copy-Item $HomeDir\data\import\sections.csv -Destination $HomeDir\data\output\Clever
     }
     # Teachers.csv
-    if (Test-Path $HomeDir\import\teachers.csv) {
-        if (Test-Path $HomeDir\Output\Clever\teachers.csv) { Remove-Item $HomeDir\Output\Clever\teachers.csv }
-        Copy-Item $HomeDir\import\teachers.csv -Destination $HomeDir\Output\Clever
+    if (Test-Path $HomeDir\data\import\teachers.csv) {
+        if (Test-Path $HomeDir\data\output\Clever\teachers.csv) { Remove-Item $HomeDir\data\output\Clever\teachers.csv }
+        Copy-Item $HomeDir\data\import\teachers.csv -Destination $HomeDir\data\output\Clever
     }
 }
 
-Export-ModuleMember -Function Export-CleverStudents, Export-CleverDownloads
+Export-ModuleMember -Function Export-CleverData
